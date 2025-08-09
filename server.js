@@ -11,6 +11,20 @@ app.get('/', (_req, res) => {
   res.type('text/plain').send('Cano Blöf WS server is running. Rooms: ROOM1, ROOM2, ROOM3');
 });
 
+// Oda özetleri: kişi sayısı + faz
+app.get('/rooms', (_req, res) => {
+  const out = {};
+  for (const id of ALLOWED_ROOMS) {
+    const r = rooms[id];
+    out[id] = {
+      count: r?.players?.length || 0,
+      phase: r?.phase || 'lobby'
+    };
+  }
+  res.json(out);
+});
+
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
