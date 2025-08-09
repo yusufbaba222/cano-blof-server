@@ -1,6 +1,4 @@
-// server.js
-// Cano Blöf – 3 sabit odalı WS sunucusu (ROOM1, ROOM2, ROOM3)
-
+// server.js — Cano Blöf (3 sabit oda: ROOM1, ROOM2, ROOM3)
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
@@ -17,19 +15,8 @@ const wss = new WebSocket.Server({ server });
 
 // ---- Sabit odalar
 const ALLOWED_ROOMS = ['ROOM1', 'ROOM2', 'ROOM3'];
-
-/**
- * room = {
- *  id, players:[{id,name,ws}], hostId, phase,
- *  order:[], turnIndex, starterId, hintRound,
- *  deckWords:[], secretWord, spyId,
- *  votesChoice: Map, votesPlayer: Map, result
- * }
- */
 const rooms = Object.create(null);
-for (const id of ALLOWED_ROOMS) {
-  rooms[id] = makeEmptyRoom(id);
-}
+for (const id of ALLOWED_ROOMS) rooms[id] = makeEmptyRoom(id);
 
 function makeEmptyRoom(id) {
   return {
@@ -58,18 +45,15 @@ const WORDS_POOL = [
   'korsan','şövalye','kalp','priz','lamba','perde','kanepe','ekran','klavye','fare'
 ];
 
-// ---- yardımcılar
+// ---- helpers
 const safeSend = (ws, obj) => { try { ws.send(JSON.stringify(obj)); } catch {} };
 const broadcast = (room, obj) => room.players.forEach(p => safeSend(p.ws, obj));
 const getPlayer = (room, id) => room.players.find(p => p.id === id);
 const norm = (s) => (s || '').trim().toLowerCase();
 const rndId = () => Math.random().toString(36).slice(2,10);
-
-function shuffle(a){ for (let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; }
+function shuffle(a){ for (let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
 function pick(pool, n){ const t=[...pool]; shuffle(t); return t.slice(0, Math.max(1, Math.min(n, t.length))); }
-
 const turnOwner = (room) => room.order.length ? room.order[room.turnIndex % room.order.length] : null;
-
 function choiceTally(room){ let player=0, round4=0; room.votesChoice.forEach(v => { if (v==='player') player++; else if (v==='round4') round4++; }); return { player, round4 }; }
 function playerTally(room){ const t={}; room.votesPlayer.forEach(id => { t[id]=(t[id]||0)+1; }); return t; }
 const everyoneVotedChoice = (room) => room.players.every(p => room.votesChoice.has(p.id));
@@ -77,7 +61,7 @@ const everyoneVotedPlayer = (room) => room.players.every(p => room.votesPlayer.h
 
 function publishState(roomId){
   const room = rooms[roomId]; if (!room) return;
-  const payload = {
+  broadcast(room, {
     type: 'state',
     phase: room.phase,
     players: room.players.map(p => ({ id: p.id, name: p.name })),
@@ -87,8 +71,7 @@ function publishState(roomId){
     turnOwner: turnOwner(room),
     hintRound: room.hintRound,
     result: room.result || null,
-  };
-  broadcast(room, payload);
+  });
   if (room.phase === 'voteChoice') broadcast(room, { type: 'vote_choice_update', tally: choiceTally(room) });
   if (room.phase === 'votePlayer') broadcast(room, { type: 'vote_player_update', tally: playerTally(room) });
 }
@@ -101,15 +84,17 @@ function setupRound(room){
   room.hintRound = 1;
   room.result = null;
 
+  // Roller
   const spyIdx = Math.floor(Math.random() * room.order.length);
   room.spyId = room.order[spyIdx] || null;
 
+  // Kelime destesi + gizli kelime
   const deck = pick(WORDS_POOL, 20);
   room.deckWords = deck;
   room.secretWord = deck[Math.floor(Math.random() * deck.length)] || deck[0];
 
+  // Dağıtım bildirimleri
   broadcast(room, { type: 'deal_start' });
-
   room.players.forEach(p => {
     if (p.id === room.spyId) safeSend(p.ws, { type: 'your_card', role: 'SPY', title: 'CASUS' });
     else safeSend(p.ws, { type: 'your_card', role: 'WORD', title: 'MASUM', words: deck });
@@ -167,8 +152,6 @@ function handleSpyGuess(room, fromId, guess){
   broadcast(room, { type: 'game_result', ...room.result });
 }
 
-function norm(s){ return (s || '').trim().toLowerCase(); }
-
 // ---- WS
 wss.on('connection', (ws) => {
   let roomId = null;
@@ -189,7 +172,7 @@ wss.on('connection', (ws) => {
         return;
       }
       roomId = wanted;
-      const room = rooms[roomId]; // zaten var (sabit oda)
+      const room = rooms[roomId];
 
       // isim tekilliği
       if (room.players.find(p => norm(p.name) === norm(name))) {
@@ -291,7 +274,7 @@ wss.on('connection', (ws) => {
       }
     }
 
-    // DİKKAT: Oda boşsa bile SİLME (sabit odalar)
+    // Sabit odalar: oda boşsa bile SİLME
     publishState(roomId);
   });
 });
